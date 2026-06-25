@@ -1,26 +1,27 @@
 import type { APIRoute } from 'astro';
-import { getCollection } from 'astro:content';
-import { getPageSlug, historyForSlug } from '../lib/article-history';
+import { historyForSlug } from '../lib/article-history';
 import { buildJsonFeed } from '../../scripts/json-feed.js';
+import slugMap from '../../public/data/slugmap.json';
 
-export const GET: APIRoute = async ({ site }) => {
+export const GET: APIRoute = ({ site }) => {
   const base = site ?? new URL('https://taopedia.org');
   const origin = base.origin;
-  const pages = await getCollection('pages');
 
   // Mirror /rss.xml: same canonical article URLs and newest-first ordering, but
   // serialize as JSON Feed 1.1 for clients that prefer JSON over XML.
-  const items = pages.map((page) => {
-    const slug = getPageSlug(page);
+  // Read public/data/slugmap.json — the same title/summary/categories artifact
+  // search-data.json (#1405) and sitemap.xml (#1416) already use — instead of
+  // calling getCollection('pages') and re-reading every article's frontmatter.
+  const items = Object.entries(slugMap).map(([slug, entry]) => {
     const history = historyForSlug(slug);
     const dateModified = history[0]?.date ?? '';
     const datePublished = history[history.length - 1]?.date ?? '';
     return {
-      title: page.data.title,
+      title: entry?.title ?? slug,
       url: `${origin}/wiki/${slug}/`,
       image: `${origin}/og/${slug}.png`,
-      description: page.data.summary ?? '',
-      categories: page.data.categories ?? [],
+      description: entry?.summary ?? '',
+      categories: entry?.categories ?? [],
       datePublished,
       dateModified,
     };
