@@ -1,10 +1,12 @@
 import type { APIRoute } from 'astro';
 import { getCollection, render } from 'astro:content';
 import { getPageSlug, allRecentChanges, historyForSlug } from '../../../lib/article-history';
+import { publishedTitleBySlug } from '../../../lib/site-feed-context';
 import { RECENT_LIMIT } from '../../../lib/recent-changes.js';
 import { publishedInboundLinkCount } from '../../../../scripts/most-linked.js';
 import { getArticleReferences } from '../../../lib/article-references.js';
 import { getArticleToc } from '../../../lib/article-toc.js';
+import slugMap from '../../../../public/data/slugmap.json';
 
 // The inbound-link graph is the same public/data/backlinks.json the HTML
 // "What links here" page, allpages.json, mostlinkedpages.json, subnets.json and
@@ -30,17 +32,18 @@ const linkgraphData = Object.values(linkgraphModules)[0]?.default ?? {};
 
 export const GET: APIRoute = async ({ site }) => {
   const origin = (site ?? new URL('https://taopedia.org')).origin;
-  const pages = await getCollection('pages');
+  const titleBySlug = publishedTitleBySlug();
+  const changes = allRecentChanges(titleBySlug, RECENT_LIMIT);
+  const feedSlugs = new Set(changes.map((change) => change.slug));
 
-  const titleBySlug: Record<string, string> = {};
+  // sectionCount and wordCount still need the content collection (render + body),
+  // but only for slugs that appear in the feed (≤ RECENT_LIMIT distinct articles).
+  const pages = await getCollection('pages');
   const pageBySlug: Record<string, (typeof pages)[number]> = {};
   for (const page of pages) {
     const slug = getPageSlug(page);
-    titleBySlug[slug] = page.data.title;
-    pageBySlug[slug] = page;
+    if (feedSlugs.has(slug)) pageBySlug[slug] = page;
   }
-
-  const changes = allRecentChanges(titleBySlug, RECENT_LIMIT);
 
   // sectionCount is the changed article's table-of-contents section count — the
   // same figure toc.json exposes as `count` and info.json / history.json expose
@@ -72,8 +75,8 @@ export const GET: APIRoute = async ({ site }) => {
     const { headings } = await render(page);
     sectionCountBySlug[change.slug] = getArticleToc(headings).length;
     wordCountBySlug[change.slug] = (page.body ?? '').trim().split(/\s+/).filter(Boolean).length;
-    categoriesBySlug[change.slug] = page.data.categories ?? [];
-    summaryBySlug[change.slug] = page.data.summary ?? '';
+    categoriesBySlug[change.slug] = slugMap[change.slug]?.categories ?? [];
+    summaryBySlug[change.slug] = slugMap[change.slug]?.summary ?? '';
   }
   // revisionCount/firstEdited/lastEdited are the changed article's own commit-
   // history stats (history is newest-first) — the same trio info.json /
